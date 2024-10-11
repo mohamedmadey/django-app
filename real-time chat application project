@@ -1,0 +1,100 @@
+
+pip install channels
+INSTALLED_APPS = [
+    'channels',
+    # other apps
+]
+
+ASGI_APPLICATION = "myproject.asgi.application"
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels_redis.core.RedisChannelLayer',
+        'CONFIG': {
+            "hosts": [('127.0.0.1', 6379)],  # Ensure Redis is installed and running
+        },
+    },
+}
+from django.urls import path
+from .consumers import ChatConsumer
+
+websocket_urlpatterns = [
+    path("ws/chat/<str:room_name>/", ChatConsumer.as_asgi()),
+]
+from channels.generic.websocket import AsyncWebsocketConsumer
+import json
+
+class ChatConsumer(AsyncWebsocketConsumer):
+    async def connect(self):
+        self.room_name = self.scope['url_route']['kwargs']['room_name']
+        self.room_group_name = f'chat_{self.room_name}'
+
+        await self.channel_layer.group_add(
+            self.room_group_name,
+            self.channel_name
+        )
+        await self.accept()
+
+    async def disconnect(self, close_code):
+        await self.channel_layer.group_discard(
+            self.room_group_name,
+            self.channel_name
+        )
+
+    async def receive(self, text_data):
+        data = json.loads(text_data)
+        message = data['message']
+
+        # Send message to the room group
+        await self.channel_layer.group_send(
+            self.room_group_name,
+            {
+                'type': 'chat_message',
+                'message': message
+            }
+        )
+
+    async def chat_message(self, event):
+        message = event['message']
+
+        # Send message to WebSocket
+        await self.send(text_data=json.dumps({
+            'message': message
+        }))
+class Message(models.Model):
+    sender = models.ForeignKey(User, related_name='sent_messages', on_delete=models.CASCADE)
+    receiver = models.ForeignKey(User, related_name='received_messages', on_delete=models.CASCADE)
+    content = models.TextField()
+    timestamp = models.DateTimeField(auto_now_add=True)
+if self.scope["user"].is_authenticated:
+    # allow message handling
+else:
+    await self.close()
+const roomName = "example-room";
+const chatSocket = new WebSocket(
+    'ws://' + window.location.host + '/ws/chat/' + roomName + '/'
+);
+
+chatSocket.onmessage = function(e) {
+    const data = JSON.parse(e.data);
+    document.querySelector('#chat-log').value += (data.message + '\n');
+};
+
+chatSocket.onclose = function(e) {
+    console.error('Chat socket closed unexpectedly');
+};
+
+document.querySelector('#chat-message-input').focus();
+document.querySelector('#chat-message-input').onkeyup = function(e) {
+    if (e.keyCode === 13) {  // Enter key
+        document.querySelector('#chat-message-submit').click();
+    }
+};
+
+document.querySelector('#chat-message-submit').onclick = function(e) {
+    const messageInputDom = document.querySelector('#chat-message-input');
+    const message = messageInputDom.value;
+    chatSocket.send(JSON.stringify({
+        'message': message
+    }));
+    messageInputDom.value = '';
+};
